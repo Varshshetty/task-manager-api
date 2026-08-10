@@ -19,17 +19,34 @@ def home():
     return jsonify({
         "message": "Task Manager API is running.",
         "endpoints": {
-            "GET /tasks": "List all tasks",
+            "GET /tasks": "List all tasks (supports ?status= and ?priority= filters)",
             "GET /tasks/<id>": "Get one task",
             "POST /tasks": "Create a task",
+            "PUT /tasks/<id>": "Update a task",
+            "DELETE /tasks/<id>": "Delete a task",
         },
     })
 
 
 @app.route("/tasks", methods=["GET"])
 def get_tasks():
-    """Return every task in the database."""
-    tasks = Task.query.all()
+    """Return tasks, optionally filtered by ?status= and/or ?priority= query params."""
+    query = Task.query
+
+    status = request.args.get("status")
+    priority = request.args.get("priority")
+
+    if status:
+        if status not in VALID_STATUSES:
+            return jsonify({"error": f"status must be one of {sorted(VALID_STATUSES)}"}), 400
+        query = query.filter_by(status=status)
+
+    if priority:
+        if priority not in VALID_PRIORITIES:
+            return jsonify({"error": f"priority must be one of {sorted(VALID_PRIORITIES)}"}), 400
+        query = query.filter_by(priority=priority)
+
+    tasks = query.all()
     return jsonify([task.to_dict() for task in tasks])
 
 
@@ -71,8 +88,49 @@ def create_task():
     return jsonify(task.to_dict()), 201
 
 
-# NOTE: PUT (update) and DELETE endpoints, plus filtering by status/priority,
-# will be added tomorrow.
+@app.route("/tasks/<int:task_id>", methods=["PUT"])
+def update_task(task_id):
+    """Update one or more fields on an existing task."""
+    task = Task.query.get(task_id)
+    if task is None:
+        return jsonify({"error": f"No task found with id {task_id}"}), 404
+
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "Request body must be JSON with at least one field to update."}), 400
+
+    if "title" in data:
+        if not str(data["title"]).strip():
+            return jsonify({"error": "title cannot be empty."}), 400
+        task.title = data["title"].strip()
+
+    if "description" in data:
+        task.description = data["description"].strip() if data["description"] else None
+
+    if "status" in data:
+        if data["status"] not in VALID_STATUSES:
+            return jsonify({"error": f"status must be one of {sorted(VALID_STATUSES)}"}), 400
+        task.status = data["status"]
+
+    if "priority" in data:
+        if data["priority"] not in VALID_PRIORITIES:
+            return jsonify({"error": f"priority must be one of {sorted(VALID_PRIORITIES)}"}), 400
+        task.priority = data["priority"]
+
+    db.session.commit()
+    return jsonify(task.to_dict())
+
+
+@app.route("/tasks/<int:task_id>", methods=["DELETE"])
+def delete_task(task_id):
+    """Delete a task by its id."""
+    task = Task.query.get(task_id)
+    if task is None:
+        return jsonify({"error": f"No task found with id {task_id}"}), 404
+
+    db.session.delete(task)
+    db.session.commit()
+    return jsonify({"message": f"Task {task_id} deleted."}), 200
 
 
 if __name__ == "__main__":
