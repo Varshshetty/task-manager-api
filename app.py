@@ -21,6 +21,7 @@ def home():
         "endpoints": {
             "GET /tasks": "List all tasks (supports ?status= and ?priority= filters)",
             "GET /tasks/<id>": "Get one task",
+            "GET /tasks/count": "Get total task counts per status",
             "POST /tasks": "Create a task",
             "PUT /tasks/<id>": "Update a task",
             "DELETE /tasks/<id>": "Delete a task",
@@ -48,6 +49,24 @@ def get_tasks():
 
     tasks = query.all()
     return jsonify([task.to_dict() for task in tasks])
+
+
+@app.route("/tasks/count", methods=["GET"])
+def get_task_counts():
+    """Return the total number of tasks, plus a breakdown per status."""
+    counts = {status: 0 for status in sorted(VALID_STATUSES)}
+
+    rows = (
+        db.session.query(Task.status, db.func.count(Task.id))
+        .group_by(Task.status)
+        .all()
+    )
+    for status, count in rows:
+        counts[status] = count
+
+    total = sum(counts.values())
+
+    return jsonify({"total": total, "by_status": counts})
 
 
 @app.route("/tasks/<int:task_id>", methods=["GET"])
